@@ -5,17 +5,19 @@
 #define PI 3.1415926
 #define P2 PI/2
 #define P3 3*PI/2
-#define DEG 0.0174533
+//#define DEG 0.0174533
+
 
 #define WINDOW_HEIGHT 512
 #define WINDOW_WIDTH 1024
 
-#define MAP_SIZE 150//should be a multiple of MAP_ARRAY
+#define NUM_OF_RAYS 120
+#define RAY_ANGLE_INC 0.0074533
+#define MAP_SIZE 210//should be a multiple of MAP_ARRAY
 #define MAP_ARRAY 15//the size of our map in cells, maps always square
 #define MAP_CELL_SIZE   MAP_SIZE/MAP_ARRAY
 #define PLAYER_SIZE    MAP_CELL_SIZE/3
-#define FOV 60
-#define VIEW_STRIP    WINDOW_WIDTH/FOV
+#define VIEW_STRIP    WINDOW_WIDTH/NUM_OF_RAYS
 #define TURNING_ANGLE 0.07
 #define SPEED    PLAYER_SIZE/4
 
@@ -39,7 +41,7 @@ int map[] =
     ,1,0,0,0,0,0,1,1,1,0,0,0,0,0,1
     ,1,2,2,2,0,0,0,0,1,0,0,0,0,0,1
     ,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1
-    ,1,0,1,0,0,0,0,0,0,0,0,0,0,0,1
+    ,1,0,3,0,0,0,0,0,0,0,0,0,0,0,1
     ,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1
     ,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1
     ,1,1,1,1,1,1,1,1,1,0,0,0,0,0,1
@@ -49,11 +51,12 @@ int map[] =
 
 struct Ray{
     float distance;
+    float angle;
     bool vertical;
     int wallType;
 };
 
-Ray rays[FOV];
+Ray rays[NUM_OF_RAYS];
 
 
 
@@ -125,7 +128,7 @@ void drawMinimap(){
 
 
 
-//TODO
+
 void drawView(){
 
     //draw the floor
@@ -136,6 +139,59 @@ void drawView(){
         glVertex2f(WINDOW_WIDTH, WINDOW_HEIGHT);
         glVertex2f(0,WINDOW_HEIGHT);
     glEnd();
+
+
+
+
+    //draw each part of the wall
+    float lineHeight;
+    float fixFishEye;
+    for(int i=0 ; i<sizeof(rays)/sizeof(Ray) ; i++){
+
+        //no idea how this fixes the distortion
+        fixFishEye = playerAngle-rays[i].angle;
+        if(fixFishEye<0){//constrain angle
+            fixFishEye += 2*PI;
+        }else if(fixFishEye > 2*PI){
+            fixFishEye -= 2*PI;
+        }
+        rays[i].distance = rays[i].distance*cos(fixFishEye);
+
+
+        //pick a colour
+        switch(rays[i].wallType){
+            case 1: 
+                if(rays[i].vertical){
+                    glColor3f(0.6,0,0);
+                }else{
+                    glColor3f(0.4,0,0);
+                }
+                break;
+            case 2: 
+                if(rays[i].vertical){
+                    glColor3f(0,0.6,0);
+                }else{
+                    glColor3f(0,0.4,0);
+                }
+                break;
+            case 3: 
+                if(rays[i].vertical){
+                    glColor3f(0,0,0.6);
+                }else{
+                    glColor3f(0,0,0.4);
+                }
+                break;
+        }
+
+        //set line height and draw
+        lineHeight = (MAP_CELL_SIZE*WINDOW_HEIGHT)/rays[i].distance;
+        glBegin(GL_QUADS);
+            glVertex2f(i*VIEW_STRIP, WINDOW_HEIGHT/2 - lineHeight/2);
+            glVertex2f((i+1)*VIEW_STRIP, WINDOW_HEIGHT/2 - lineHeight/2);
+            glVertex2f((i+1)*VIEW_STRIP, WINDOW_HEIGHT/2 + lineHeight);
+            glVertex2f(i*VIEW_STRIP, WINDOW_HEIGHT/2 + lineHeight);
+        glEnd();
+    }
 }
 
 
@@ -150,13 +206,14 @@ float distance(float ax, float bx, float ay, float by){
 
 
 
+
 //casts a bunch o rays
 void castRays(){
     float rayY, rayX, xOffset, yOffset;
     int mapX, mapY,mapIndex, hWallType, vWallType;
     int depth, maxDepth=MAP_ARRAY; //how many times we loop before giving up
 
-    float rayAngle = playerAngle-FOV/2*DEG;
+    float rayAngle = playerAngle-NUM_OF_RAYS/2*RAY_ANGLE_INC;
     if(rayAngle<0){//constrain angle
             rayAngle += 2*PI;
     }else if(rayAngle > 2*PI){
@@ -164,7 +221,7 @@ void castRays(){
     }
     
 
-    for(int i=0  ;i<FOV ; i++){        
+    for(int i=0  ;i<NUM_OF_RAYS ; i++){        
         //HORIZONTAL RAY CHECK
         float hX, hY, hDistance=9999999999;
         depth=0;
@@ -259,22 +316,16 @@ void castRays(){
             rays[i].distance = hDistance;
             rays[i].vertical = false;
             rays[i].wallType = hWallType;
+            rays[i].angle = rayAngle;
         }else{
             rays[i].distance = vDistance;
             rays[i].vertical = true;
             rays[i].wallType = vWallType;
+            rays[i].angle = rayAngle;
         }
 
-        //draw it, just for testing
-        glColor3f(0,255,0);
-        glLineWidth(1);
-        glBegin(GL_LINES);
-            glVertex2f(playerX,playerY+WINDOW_HEIGHT - MAP_SIZE);
-            glVertex2f(rayX,rayY+WINDOW_HEIGHT - MAP_SIZE);
-        glEnd();
-
         //increase angle for next ray
-        rayAngle +=DEG;
+        rayAngle +=RAY_ANGLE_INC;
         if(rayAngle<0){//constrain angle
             rayAngle += 2*PI;
         }else if(rayAngle > 2*PI){
@@ -285,7 +336,7 @@ void castRays(){
 
 
 
-
+//TODO collision detection
 //tank controls
 //not sure why we need int x and y as args
 void buttons(unsigned char key, int x, int y){
@@ -316,11 +367,10 @@ void display(){
     glClear(GL_COLOR_BUFFER_BIT);//not sure
     glutSwapBuffers();//not sure
     
-    //cast rays first is more accurate, cast rays last to see them
     castRays();
     drawView();
     drawMinimap();
-    //castRays();
+
     
     glFlush();//not sure
 }
@@ -333,7 +383,7 @@ void init(){
     glutInitDisplayMode(GLUT_SINGLE);//not sure
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     glutCreateWindow("Babys first game");
-    glClearColor(0.3,0.3,0.3,0);//set bg colour to grey
+    glClearColor(0.4,0.4,0.4,0);//set bg colour to grey
     gluOrtho2D(0,WINDOW_WIDTH,WINDOW_HEIGHT,0);//sets x, y co-ords
 }
 
